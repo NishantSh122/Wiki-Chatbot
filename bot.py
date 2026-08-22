@@ -517,7 +517,7 @@ while True:
     found = False
     for keywords, reply in key_convo:
         for keywrd in keywords: #runs till each element in keywords
-            if keywrd in user:
+            if keywrd == user:
                 print("Bot:",reply)
                 found = True
                 break
