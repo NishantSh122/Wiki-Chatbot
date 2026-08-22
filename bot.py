@@ -1,6 +1,8 @@
 #pip install nltk
 #pip install wikipedia
 #pip install requests
+import json
+import os
 from datetime import datetime
 import requests
 import difflib
@@ -13,12 +15,28 @@ WIKI_SEARCH_URL = "https://en.wikipedia.org/w/api.php"
 WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 WTTR_URL = "https://wttr.in"
-memory={
+memory_file = "memory.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+memory_file = os.path.join(BASE_DIR, "memory.json")
+
+default_memory = {
     "name": None,
     "age": None,
     "address": None,
     "work": None
 }
+
+if os.path.exists(memory_file):
+    try:
+        with open(memory_file, "r") as file:
+            memory = json.load(file)
+    except (json.JSONDecodeError):
+        memory = default_memory.copy()
+    else:
+        memory=default_memory.copy()
+        with open(memory_file,"w") as file:
+            json.dump(memory, file, indent=4)
+    
 key_convo = [
     (["hello","hey","helo","wassup","sup"], "Hello! How can I help you?"),
     (["hi","hii","yo"], "Hi! What's up? How can I help you today?"),
@@ -89,9 +107,12 @@ pfp_phrase = {
 define_phrase={
     "define", "what is the meaning of",
     "definition of", "what does",
-    "meaning by", "meaning of"
+    "meaning by", "meaning of","what do you mean by", "what is the meaning of"
 }
-
+def save_memory():
+    with open(memory_file,"w") as file:
+        json.dump(memory,file,indent=4)
+        
 #fetching name for the user data
 def get_name(text):
     phrases= [
@@ -297,8 +318,9 @@ def get_definition(text):
     if not synsets:
         return None
     definition = synsets[0].definition()
-    exammple_sentences = synsets[0].examples()
-    return definition, exammple_sentences
+    example_sentences = synsets[0].examples()
+    print(definition, example_sentences)
+    return definition, example_sentences
 
 #weather detecting 
 def isweather(text):
@@ -434,16 +456,19 @@ while True:
     name = get_name(user)
     if name is not None:
         memory["name"]=name
+        save_memory()
         print("Bot: Nice to meet you, "+name+"!")
         continue
     age = get_age(user)
     if age is not None:
         memory["age"]=age
+        save_memory()
         print("Bot: I'll remember that you are " + str(age) + " years old.")
         continue
     address = get_address(user)
     if address is not None:
-        memory["address"]
+        memory["address"] = address
+        save_memory()
         print("Bot: I'll remember that you live in " + address + ".")
         continue
     
