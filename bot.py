@@ -1,6 +1,7 @@
 #pip install nltk
 #pip install wikipedia
 #pip install requests
+from datetime import datetime
 import requests
 import difflib
 import nltk
@@ -12,6 +13,12 @@ WIKI_SEARCH_URL = "https://en.wikipedia.org/w/api.php"
 WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
 GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 WTTR_URL = "https://wttr.in"
+memory={
+    "name": None,
+    "age": None,
+    "address": None,
+    "work": None
+}
 key_convo = [
     (["hello","hey","helo","wassup","sup"], "Hello! How can I help you?"),
     (["hi","hii","yo"], "Hi! What's up? How can I help you today?"),
@@ -54,6 +61,9 @@ weather_tags = {
 }
 location_markers = [" in ", " at ", " for ", " of ", " near "]
 trailing_noise = {"today","now","right","now?","currently","please","tomorrow","tonight"}
+time_tags={
+    "time", "clock", "current time"
+}
 question_wrds = {
     "what", "who", "where", "when", "why", "how", "define", "explain", "elaborate", "describe", "discuss", "generate", "tell"
 }
@@ -81,6 +91,77 @@ define_phrase={
     "definition of", "what does",
     "meaning by", "meaning of"
 }
+
+#fetching name for the user data
+def get_name(text):
+    phrases= [
+        "my name is",
+        "i am", "i'm"
+    ]
+    for phrase in phrases:
+        if text.startswith(phrase + " "):
+            name = text[len(phrase):].strip()
+            if name:
+                return name
+    return None
+
+#fetching user age for data
+def get_age(text):
+    words = text.split()
+    if text.startswith("my age is "):
+        age = text[len("my age is "):].strip()
+        age = age.replace(" years old", "")
+        age = age.replace(" years", "")
+        age = age.replace(" year old", "")
+        age = age.replace(" year", "")
+        if age.isdigit():
+            return int(age)
+    if text.startswith("i am "):
+        age = text[len("i am "):].strip()
+        age = age.replace(" years old", "")
+        age = age.replace(" years", "")
+        age = age.replace(" year old", "")
+        age = age.replace(" year", "")
+        if age.isdigit():
+            return int(age)
+    return None
+
+#fetching address
+def get_address(text):
+    if text.startswith("my address is"):
+        return text[len("my address is"):].strip()
+    if text.startswith("i live in"):
+            return text[len("i live in"):].strip()
+    return None
+
+#data collecting center
+def memory_response(text):
+    if "what is my name" in text or "what's my name" in text:
+        if memory["name"] is not None:
+            return "your name is " + memory["name"] + "."
+        return "I don't know your name yet."
+    if "who am i" in text:
+        if memory["name"] is not None:
+            return "You are " + memory["name"] + "."
+        return "I don't know your name yet."
+    if "how old am i" in text:
+        if memory["age"] is not None:
+            return "You are " + str(memory["age"]) + " years old."
+        return "I don't know your age yet."
+    if "what is my age" in text:
+        if memory["age"] is not None:
+            return "You are " + str(memory["age"]) + " years old."
+        return "I don't know your age yet."
+    if "what is my address" in text:
+        if memory["address"] is not None:
+            return "Your address is " + memory["address"] + "."
+        return "I don't know your address yet."
+    if "where do i live" in text:
+        if memory["address"] is not None:
+            return "Your address is " + memory["address"] + "."
+        return "I don't know your address yet."
+    return None
+
 #removing punctuations and unwanted spaces
 def normalisation(text):
     text = text.strip().lower() #remove space #lowerspace
@@ -331,11 +412,45 @@ def weather_response(place):
         "Humidity: " + str(humidity) + "%\n"
         "Wind speed: " + str(wind) + " km/h"
     )
-
+def istques(text):
+    for phrase in time_tags:
+        if phrase in text:
+            return True
+    return False
+def get_time():
+    current_time= datetime.now()
+    return current_time.strftime("%I:%M:%S %p")
 awaiting_location = False
+
+#MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN # 
+#MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN #
+#MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN #
+
 while True:
     user = input("You: ")
     user = normalisation(user)
+    
+    #storage
+    name = get_name(user)
+    if name is not None:
+        memory["name"]=name
+        print("Bot: Nice to meet you, "+name+"!")
+        continue
+    age = get_age(user)
+    if age is not None:
+        memory["age"]=age
+        print("Bot: I'll remember that you are " + str(age) + " years old.")
+        continue
+    address = get_address(user)
+    if address is not None:
+        memory["address"]
+        print("Bot: I'll remember that you live in " + address + ".")
+        continue
+    
+    memory_result = memory_response(user)
+    if memory_result is not None:
+        print("Bot:", memory_result)
+        continue
     
     #state word check
     if awaiting_location:
@@ -366,7 +481,13 @@ while True:
         else: 
             print("Bot: ", result)
         continue
-
+    
+    #time report
+    if istques(user):
+        current_time = get_time()
+        print("Bot: The current time is", current_time)
+        continue
+    
     #key_word looker
     found = False
     for keywords, reply in key_convo:
