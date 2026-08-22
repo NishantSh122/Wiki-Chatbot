@@ -1,16 +1,20 @@
 #pip install nltk
 #pip install wikipedia
+#pip instasll requests
+import requests
+import difflib
 import nltk
 nltk.download("wordnet")
 nltk.download("omw-1.4")
 from nltk.corpus import wordnet as wrdnet
+WIKI_SEARCH_URL = "https://en.wikipedia.org/w/api.php"
 key_convo = [
     (["hello","hey","helo","wassup","sup"], "Hello! How can I help you?"),
     (["hi","hii","yo"], "Hi! What's up? How can I help you today?"),
     (["how are you","how are you doing", "how is the josh"],"I'm doing great! How about you?"),
     (["what is your name","what you do","can you work","who are you","tell us about yourself"],"I'm a Python ChatBot Created by NishantSh122. I can talk to you and answer your questions to my capabilities.")
 ]
-terminators = {"exit","bye","goodbye","cya","goodnight","close","shut up"}
+terminators = {"exit","bye","goodbye","cya","goodnight","goodnight","close","shut up"}
 
 question_wrds = {
     "what", "who", "where", "when", "why", "how", "define", "explain", "elaborate", "describe", "discuss", "generate", "tell"
@@ -24,7 +28,7 @@ starting_phrases = [
     "where was","when is","when was",
     "why is","why was",
     "how is","how does",
-    "how do",
+    "how do","define",
     "explain","describe"
 ]
 pfp_phrase = {
@@ -35,8 +39,8 @@ pfp_phrase = {
     "do you like me"
 }
 define_phrase={
-    "define", "what is the meaning of"
-    "definition of", "what does"
+    "define", "what is the meaning of",
+    "definition of", "what does",
     "meaning by", "meaning of"
 }
 #removing punctuations and unwanted spaces
@@ -76,6 +80,9 @@ def get_topics(text):
             text = text[len(prefix):].strip()
             break
     return text
+headers = {
+    'User-Agent': 'PythonBot/1.0 (contact@example.com)'
+    return title, sumry
 
 #removing the definition question tags and leaving behind the keys to be searceh up on wordnet
 def get_word(text):
@@ -121,10 +128,14 @@ while True:
         word = get_word(user)
         result = get_definition(word)
         if result is None:
-            if isfques(user):
-                    topic = get_topics(user)
-                    print("Bot: User is asking about:", topic, " searching on wiki...")
-                    continue
+            result1 = get_wikipedia(word)
+            if result1 is None:
+                print("I am still an undertrained chatbot. I don't know the above information. Please feel free to ask something else.")
+            else:
+                title, sumry = result1
+                print("Bot: ",sumry)
+                print("/source:",title)
+            continue
         else:
             define, example = result #adds result values of get_definiton(returns define and example)
             print("Bot:", define) #prints word and its sentence
@@ -135,7 +146,13 @@ while True:
     #ques check
     if isfques(user):
         topic = get_topics(user)
-        print("Bot: User is asking about:", topic, " searching on wiki...")
+        result = get_wikipedia(topic)
+        if result is None:
+            print("I am still an undertrained chatbot. I don't know the above information. Please feel free to ask something else.")
+        else:
+            title, sumry = result
+            print("Bot: ",sumry)
+            print("/source:",title)
         continue
 
     #if passes fails all the tests above then execute this at end;
