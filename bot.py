@@ -1,21 +1,59 @@
 #pip install nltk
 #pip install wikipedia
-#pip instasll requests
+#pip install requests
 import requests
 import difflib
 import nltk
 nltk.download("wordnet")
 nltk.download("omw-1.4")
 from nltk.corpus import wordnet as wrdnet
+
 WIKI_SEARCH_URL = "https://en.wikipedia.org/w/api.php"
+WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
+GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
+WTTR_URL = "https://wttr.in"
 key_convo = [
     (["hello","hey","helo","wassup","sup"], "Hello! How can I help you?"),
     (["hi","hii","yo"], "Hi! What's up? How can I help you today?"),
     (["how are you","how are you doing", "how is the josh"],"I'm doing great! How about you?"),
     (["what is your name","what you do","can you work","who are you","tell us about yourself"],"I'm a Python ChatBot Created by NishantSh122. I can talk to you and answer your questions to my capabilities.")
 ]
-terminators = {"exit","bye","goodbye","cya","goodnight","goodnight","close","shut up"}
-
+terminators = {"exit","bye","goodbye","cya","good night","goodnight","close","shut up"}
+weather_states = {
+    "andhra pradesh",
+    "arunachal pradesh",
+    "assam",
+    "bihar",
+    "chhattisgarh",
+    "goa",
+    "gujarat",
+    "haryana",
+    "himachal pradesh",
+    "jharkhand",
+    "karnataka",
+    "kerala",
+    "madhya pradesh",
+    "maharashtra",
+    "manipur",
+    "meghalaya",
+    "mizoram",
+    "nagaland",
+    "odisha",
+    "punjab",
+    "rajasthan",
+    "sikkim",
+    "tamil nadu",
+    "telangana",
+    "tripura",
+    "uttar pradesh",
+    "uttarakhand",
+    "west bengal"
+}
+weather_tags = {
+    "weather", "temperature","climate","forecast"
+}
+location_markers = [" in ", " at ", " for ", " of ", " near "]
+trailing_noise = {"today","now","right","now?","currently","please","tomorrow","tonight"}
 question_wrds = {
     "what", "who", "where", "when", "why", "how", "define", "explain", "elaborate", "describe", "discuss", "generate", "tell"
 }
@@ -45,8 +83,7 @@ define_phrase={
 }
 #removing punctuations and unwanted spaces
 def normalisation(text):
-    text = text.strip() #remove space
-    text= text.lower() #lowerspace
+    text = text.strip().lower() #remove space #lowerspace
     for ch in ["?","!",".",",","'"]:
         text=text.replace(ch,"") #replacing the character with an empty character literal
     text = ' '.join(text.split()) #splitting large space and resulting in one string with just one space between characters
@@ -82,7 +119,88 @@ def get_topics(text):
     return text
 headers = {
     'User-Agent': 'PythonBot/1.0 (contact@example.com)'
+}
+
+#searching the word
+def look_wiki(topic):
+    try:
+        response_wiki = requests.get(
+            WIKI_SEARCH_URL,
+            headers=headers,
+            params = {
+                "action":"query",
+                "list":"search",
+                "srsearch": topic,
+                "srlimit":5,
+                "format":"json"
+            },
+            timeout=10
+        )
+        response_wiki.raise_for_status()
+        data = response_wiki.json()
+        results = data.get("query",{}).get("search",[])
+        titles=[result["title"] for result in results]
+        return titles
+    except requests.exceptions.RequestException as e:
+        print("API Error:", e)
+        return None
+
+#chosing the top topic for the user
+def top_wiki_title(topic, titles):
+    if not titles:
+        return None
+    lower_titles = [t.lower() for t in titles]
+    matches = difflib.get_close_matches(
+        topic.lower(),
+        lower_titles,
+        n=1, #selecting the first topic for the wiki search/summary
+        cutoff=0.5 #no results that are way too off --> feature of bot
+    )
+    if matches:
+        matched_index = lower_titles.index(matches[0])
+        return titles[matched_index]
+    return None
+
+#using the above method and getting summary
+def get_sumry(title):
+    concatenated_title = requests.utils.quote(title,safe="")
+    url = ("https://en.wikipedia.org/api/rest_v1/page/summary/" + concatenated_title)
+    try:
+        response = requests.get(
+            url,headers = headers, timeout=10
+        )
+        response.raise_for_status()
+        data=response.json()
+        return data.get("extract") #wikipedia response name (default)
+    except requests.exceptions.RequestException:
+        return None
+
+#final call directly to the wikipedia
+def get_wikipedia(topic):
+    titles = look_wiki(topic)
+    if titles is None:
+        return None
+    if not titles:
+        return None
+    title = top_wiki_title(
+        topic,titles
+    )
+    if title is None:
+        return None
+    sumry = get_sumry(title)
+    if sumry is None:
+        return None
+    if isAmbiguity(sumry):
+        return None
     return title, sumry
+
+#removing ambiguity of words
+def isAmbiguity(sumry):
+    if not sumry:
+        return True
+    if "may refer to:" in sumry.lower() and len(sumry)<200:
+        return True
+    return False
 
 #removing the definition question tags and leaving behind the keys to be searceh up on wordnet
 def get_word(text):
@@ -101,15 +219,154 @@ def get_definition(text):
     exammple_sentences = synsets[0].examples()
     return definition, exammple_sentences
 
+#weather detecting 
+def isweather(text):
+    for tags in weather_tags:
+        if tags in text:
+            return True
+    return False
+
+#getting location data
+def get_location(text):
+    padded = " " + text + " "
+    best_idx = -1
+    best_marker_len = 0
+    for marker in location_markers:
+        idx = padded.find(marker)
+        if idx != -1 and (best_idx == -1 or idx < best_idx):
+            best_idx = idx
+            best_marker_len = len(marker)
+    if best_idx == -1:
+        return None
+    location = padded[best_idx + best_marker_len:].strip()
+    for tag in weather_tags:
+        location = location.replace(tag, "").strip()
+    words = [w for w in location.split() if w not in trailing_noise]
+    location = " ".join(words)
+    return location if location else None
+
+#getting weather details
+def get_mausam(place):
+    try:
+        response = requests.get(
+            WTTR_URL + "/" + requests.utils.quote(place),
+            params={"format": "j1"},
+            headers=headers, timeout=10
+        )
+        response.raise_for_status()
+        data = response.json()
+        current = data.get("current_condition", [None])[0]
+        area = data.get("nearest_area", [None])[0]
+        if current is None:
+            return None, None
+        resolved_name = None
+        if area:
+            area_name = area.get("areaName", [{}])[0].get("value")
+            region = area.get("region", [{}])[0].get("value")
+            resolved_name = area_name if area_name else region
+        return current, resolved_name
+    except requests.exceptions.RequestException as e:
+        print("Weather API Error:", e)
+        return None, None
+
+#decoding the weather codes
+def weather_decoder(code):
+    weather_codes ={
+        0: "Clear sky",
+        1: "Mainly clear",
+        2: "Partly cloudy",
+        3: "Overcast",
+        45: "Foggy",
+        48: "Depositing rime fog",
+        51: "Light drizzle",
+        53: "Moderate drizzle",
+        55: "Dense drizzle",
+        61: "Slight rain",
+        63: "Moderate rain",
+        65: "Heavy rain",
+        71: "Slight snowfall",
+        73: "Moderate snowfall",
+        75: "Heavy snowfall",
+        80: "Slight rain showers",
+        81: "Moderate rain showers",
+        82: "Violent rain showers",
+        95: "Thunderstorm",
+        96: "Thunderstorm with slight hail",
+        99: "Thunderstorm with heavy hail"
+    }
+    return weather_codes.get(code,"Weather condition unavailable")
+
+#giving back all weather data 
+def weather_response(place):
+    result, resolved_name = get_mausam(place)
+    if result is None:
+        return None
+    temperature = result.get("temperature_2m")
+    humidity = result.get("relative_humidity_2m")
+    wind = result.get("wind_speed_10m")
+    code = result.get("weather_code")
+    condition = weather_decoder(int(code)) if code is not None else "Weather condition unavailable"
+    display_name = (resolved_name or place).title()
+    return(
+        "Weather in " + display_name + ":\n"
+        "Temperature: " + str(temperature) + "°C\n"
+        "Condition: " + condition + "\n"
+        "Humidity: " + str(humidity) + "%\n"
+        "Wind speed: " + str(wind) + " km/h"
+    )
+#api response collector
+def weather_response(place):
+    result, resolved_name = get_mausam(place)
+    if result is None:
+        return None
+    temperature = result.get("temp_C")
+    humidity = result.get("humidity")
+    wind = result.get("windspeedKmph")
+    condition = result.get("weatherDesc", [{}])[0].get("value", "Weather condition unavailable")
+    display_name = (resolved_name or place).title()
+    return(
+        "Weather in " + display_name + ":\n"
+        "Temperature: " + str(temperature) + "°C\n"
+        "Condition: " + condition + "\n"
+        "Humidity: " + str(humidity) + "%\n"
+        "Wind speed: " + str(wind) + " km/h"
+    )
+
+awaiting_location = False
 while True:
     user = input("You: ")
     user = normalisation(user)
+    
+    #state word check
+    if awaiting_location:
+        place = get_location(user)
+        result = weather_response(place)
+        if result is None:
+            print("Bot: Sorry, I couldn't find weather data for '" + place + "'. Try a nearby bigger city or check the spelling?")
+        else:
+            print("Bot: ",result)
+        awaiting_location =False
+        continue
     
     #terminating words
     if user in terminators:
         print("Bot: Goodbye!")
         break
     
+    #weather report
+    if isweather(user):
+        place = get_location(user)
+        if place is None:
+            print("Bot: Which state would you like the weather for?")
+            awaiting_location=True
+            continue
+        result=weather_response(place)
+        if result is None:
+            print("Bot: Sorry, I couldn't find weather data for '" + place + "'. Try a nearby bigger city or check the spelling?")
+        else: 
+            print("Bot: ", result)
+        continue
+
     #key_word looker
     found = False
     for keywords, reply in key_convo:
