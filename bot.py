@@ -1,15 +1,16 @@
 #pip install nltk
 #pip install wikipedia
 #pip install requests
-import json
 import os
+import json
 from datetime import datetime
-import requests
 import difflib
+import requests
 import nltk
 nltk.download("wordnet")
 nltk.download("omw-1.4")
 from nltk.corpus import wordnet as wrdnet
+import sympy
 
 WIKI_SEARCH_URL = "https://en.wikipedia.org/w/api.php"
 WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
@@ -25,6 +26,9 @@ default_memory = {
     "address": None,
     "work": None
 }
+def save_memory():
+    with open(memory_file,"w") as file:
+        json.dump(memory,file,indent=4)
 
 if os.path.exists(memory_file):
     try:
@@ -32,10 +36,9 @@ if os.path.exists(memory_file):
             memory = json.load(file)
     except (json.JSONDecodeError):
         memory = default_memory.copy()
-    else:
-        memory=default_memory.copy()
-        with open(memory_file,"w") as file:
-            json.dump(memory, file, indent=4)
+else:
+    memory=default_memory.copy()
+    save_memory()
     
 key_convo = [
     (["hello","hey","helo","wassup","sup"], "Hello! How can I help you?"),
@@ -109,9 +112,6 @@ define_phrase={
     "definition of", "what does",
     "meaning by", "meaning of","what do you mean by", "what is the meaning of"
 }
-def save_memory():
-    with open(memory_file,"w") as file:
-        json.dump(memory,file,indent=4)
         
 #fetching name for the user data
 def get_name(text):
@@ -186,10 +186,13 @@ def memory_response(text):
 #removing punctuations and unwanted spaces
 def normalisation(text):
     text = text.strip().lower() #remove space #lowerspace
-    for ch in ["?","!",".",",","'"]:
+    if text.startswith("you:"):
+        text = text[4:].strip()
+    for ch in ["?","!",",","'"]:
         text=text.replace(ch,"") #replacing the character with an empty character literal
     text = ' '.join(text.split()) #splitting large space and resulting in one string with just one space between characters
     return text
+
 
 #checking question tags
 def isfques(text):
@@ -400,23 +403,7 @@ def weather_decoder(code):
     return weather_codes.get(code,"Weather condition unavailable")
 
 #giving back all weather data 
-def weather_response(place):
-    result, resolved_name = get_mausam(place)
-    if result is None:
-        return None
-    temperature = result.get("temperature_2m")
-    humidity = result.get("relative_humidity_2m")
-    wind = result.get("wind_speed_10m")
-    code = result.get("weather_code")
-    condition = weather_decoder(int(code)) if code is not None else "Weather condition unavailable"
-    display_name = (resolved_name or place).title()
-    return(
-        "Weather in " + display_name + ":\n"
-        "Temperature: " + str(temperature) + "°C\n"
-        "Condition: " + condition + "\n"
-        "Humidity: " + str(humidity) + "%\n"
-        "Wind speed: " + str(wind) + " km/h"
-    )
+    
 #api response collector
 def weather_response(place):
     result, resolved_name = get_mausam(place)
@@ -434,6 +421,8 @@ def weather_response(place):
         "Humidity: " + str(humidity) + "%\n"
         "Wind speed: " + str(wind) + " km/h"
     )
+    
+#is time ques chekcer
 def istques(text):
     for phrase in time_tags:
         if phrase in text:
@@ -442,6 +431,154 @@ def istques(text):
 def get_time():
     current_time= datetime.now()
     return current_time.strftime("%I:%M:%S %p")
+
+#maths tags and operators
+def ismques(text):
+    math_tags = {
+        "calculate",
+        "solve",
+        "simplify",
+        "differentiate",
+        "derivative",
+        "integrate",
+        "integral",
+        "factorize",
+        "factor",
+        "expand",
+        "limit",
+        "sqrt",
+        "square root"
+    }
+    if any(operator in text for operator in ["-","+","/","*","^","=","√"]):
+        return True
+    for tag in math_tags:
+        if tag in text:
+            return True
+    return False
+
+def convert_math_Exp(text):
+    mat_phrases={
+        "please calculate",
+        "please answer",
+        "calculate",
+        "solve",
+        "simplify",
+        "differentiate",
+        "derivative of",
+        "derivative",
+        "integrate",
+        "integral of",
+        "integral",
+        "factorize",
+        "factor",
+        "expand",
+        "limit",
+        "sqrt",
+        "square root",
+        "solve the",
+        "find the",
+        "what is",
+        "value of"
+    }
+    expression = text
+    for tag in mat_phrases:
+        if expression.startswith(tag+" "):
+            expression = expression[len(tag):].strip()
+            break
+    return expression
+
+def solver(text):
+    try:
+        #trying to make differentiation bot
+        if text.startswith("differentiate "):
+            expression = text[len("differentiate "):].strip()
+            x = sympy.Symbol("x")
+            expression = expression.replace("^","**")
+            result = sympy.diff(sympy.sympify(expression),x)
+            return "Derivative: "+str(result)
+        if text.startswith("derivative of "):
+            expression = text[len("derivative of "):].strip()
+            x = sympy.Symbol("x")
+            expression = expression.replace("^", "**")
+            result = sympy.diff(sympy.sympify(expression),x)
+            return "Derivative: " + str(result)
+        
+        #test for integration
+        if text.startswith("integrate "):
+            expression = text[len("integrate "):].strip()
+            x = sympy.Symbol("x")
+            expression = expression.replace("^","**")
+            result = sympy.integrate(sympy.sympify(expression),x)
+            return "Integral: " + str(result) + " + C"
+        if text.startswith("integral of"):
+            expression = text[len("integral of "):].strip()
+            x = sympy.Symbol("x")
+            expression = expression.replace("^","**")
+            result = sympy.integrate(sympy.sympify(expression),x)
+            return "Integral: " + str(result) + " + C"
+        
+        #testing limit exp
+        if text.startswith("limit "):
+            expression = text[len("limit "):].strip()
+            #limit x^3 as x approches 3
+            #limit x^3 (x->3)
+            if " as x approaches " in expression:
+                parts = expression.split(" as x approaches ")
+                equation = parts[0].strip()
+                value = parts[1].strip()
+                x = sympy.Symbol("x")
+                equation = equation.replace("^","**")
+                result = sympy.limit(sympy.sympify(equation), x, sympy.sympify(value))
+                return "Limit: " +str(result)
+            return "Please use: limit expression as x approaches value"
+        #factors
+        if text.startswith("factorize"):
+            expression = text[len("factorize "):].strip()
+            expression = expression.replace("^","**")
+            result = sympy.factor(sympy.sympify(expression))
+            return "Factorized: " + str(result)
+        
+        #equations
+        if "=" in text:
+            parts =text.split("=")
+            if len(parts) == 2:
+                left = parts[0].strip()
+                right = parts[1].strip()
+                x= sympy.Symbol("x")
+                left = left.replace("^","**")
+                right = right.replace("^","**")
+                equation = sympy.Eq(sympy.sympify(left) , sympy.sympify(right))
+                result = sympy.solve(equation,x)
+                if result:
+                    return "x = "+str(result)
+                return "No solution found."
+        
+        #simplify questions
+        if text.startswith("simplify "):
+            expression = text[len("simplify "):].strip()
+            expression = expression.replace("^","**")
+            result = sympy.simplify(sympy.sympify(expression))
+            return "Simplified: " + str(result)
+        
+        #expand the following questions
+        if text.startswith("expand "):
+            expression = text[len("expand "):].strip()
+            expression = expression.replace("^","**")
+            result=sympy.expand(sympy.sympify(expression))
+            return "Expanded: " + str(result)
+        
+        #easy peasy calc
+        expression = convert_math_Exp(text)
+        expression = expression.replace("^","**")
+        expression = expression.replace("√","sqrt")
+        result = sympy.simplify(expression)
+        result = sympy.simplify(result)
+        return "Answer: " + str(result)
+    
+    except Exception as e:
+        print("Math Error name - ", e)
+        return None
+    
 awaiting_location = False
 
 #MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN # 
@@ -511,6 +648,15 @@ while True:
     if istques(user):
         current_time = get_time()
         print("Bot: The current time is", current_time)
+        continue
+    
+    #math caclulations
+    if ismques(user):
+        result = solver(user)
+        if result is not None:
+            print("Bot: ",result)
+        else:
+            print("Bot: I couldn't solve that mathematical expression.")
         continue
     
     #key_word looker
