@@ -1,6 +1,7 @@
 #pip install nltk
 #pip install wikipedia
 #pip install requests
+#pip install sympy
 import os
 import json
 from datetime import datetime
@@ -11,6 +12,22 @@ nltk.download("wordnet")
 nltk.download("omw-1.4")
 from nltk.corpus import wordnet as wrdnet
 import sympy
+import re
+import tkinter as tk
+state = tk.DISABLED
+
+
+#return cleaner
+def clean_bot_response(response):
+    if isinstance(response , (tuple,list)):
+        response = response[0]
+    response_str = str(response).strip()
+
+    remove_this_prefix = ["Bot: ", "bot: "]
+    for prefix in remove_this_prefix:
+        if response_str.startswith(prefix):
+            response_str=response_str[len(prefix):].strip()
+    return response_str
 
 WIKI_SEARCH_URL = "https://en.wikipedia.org/w/api.php"
 WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
@@ -319,21 +336,23 @@ def intent_detector(text):
                     score += 1
         scores[intent_name] =score
     top_intent = max(scores,key=scores.get)
-    if scores[top_intent]==0:
-        return None
+    # if ismques(text):
+    #     return "math"
+    # if scores[top_intent]==0:
+    #     return None
     
     #filter check
     #jarurat nhi thi aise hi dal diya :)
-    # if ismques(text):
-    #     return "math"
-    # if isdques(text):
-    #     return "definition"
-    # if isweather(text):
-    #         return "weather"
-    # if istques(text):
-    #     return "time"
-    # if isfques(text):
-    #         return "wikipedia"
+    if ismques(text):
+        return "math"
+    if isdques(text):
+        return "definition"
+    if isweather(text):
+            return "weather"
+    if istques(text):
+        return "time"
+    if isfques(text):
+            return "wikipedia"
     return top_intent
 
 #segregating the words to be handled by apis. THE SO CALLED ENTITIES
@@ -366,12 +385,13 @@ def isdques(text):
 
 #removing the question tags and leaving behind the keys to be searched up on wiki
 def get_topics(text):
-    for phrase in starting_phrases:
+    sorted_phrases = sorted(starting_phrases, key=len, reverse=True)
+    for phrase in sorted_phrases:
         prefix = phrase + " "
         if text.startswith(prefix):
             text = text[len(prefix):].strip()
             break
-    return text
+    return text.strip()
 headers = {
     'User-Agent': 'PythonBot/1.0 (contact@example.com)'
 }
@@ -459,7 +479,8 @@ def isAmbiguity(sumry):
 
 #removing the definition question tags and leaving behind the keys to be searceh up on wordnet
 def get_word(text):
-    for phrase in define_phrase:
+    sorted_phrases = sorted(define_phrase, key=len, reverse=True)
+    for phrase in sorted_phrases:
         prefix = phrase + " "
         if text.startswith(prefix):
             return text[len(prefix):].strip()
@@ -467,6 +488,8 @@ def get_word(text):
 
 #adding nltk library to get a more good response for definintions of words.
 def get_definition(text):
+    if not text:
+        return None
     synsets = wrdnet.synsets(text)
     if not synsets:
         return None
@@ -494,7 +517,10 @@ def get_location(text):
             best_marker_len = len(marker)
     if best_idx == -1:
         return None
-    location = padded[best_idx + best_marker_len:].strip()
+    
+    location= padded[best_idx + best_marker_len:].strip()
+
+    
     for tag in weather_tags:
         location = location.replace(tag, "").strip()
     words = [w for w in location.split() if w not in trailing_noise]
@@ -635,65 +661,52 @@ def correct_phrase_if_incorrect(text):
 
 def convert_math_Exp(text):
     mat_phrases={
-        "please calculate",
-        "please answer",
-        "calculate",
-        "solve",
-        "simplify",
-        "differentiate",
-        "derivative of",
-        "derivative",
-        "integrate",
-        "integral of",
-        "integral",
-        "factorize",
-        "factor",
-        "expand",
-        "limit",
-        "sqrt",
-        "square root",
-        "solve the",
-        "find the",
-        "what is",
-        "value of"
+        "please calculate", "please answer", "calculate", "solve the",
+        "solve", "simplify", "differentiate", "derivative of", "derivative",
+        "integrate", "integral of", "integral", "factorize", "factor",
+        "expand", "limit", "sqrt", "square root", "find the value of x in",
+        "find the value of", "find the", "what is", "value of"
     }
-    expression = text
-    for tag in mat_phrases:
-        if expression.startswith(tag+" "):
-            expression = expression[len(tag):].strip()
+    expression = text.lower()
+    for tag in sorted(mat_phrases,key=len,reverse=True):
+        if tag in expression:
+            expression = expression.replace(tag,"").strip()
             break
+    expression = re.sub(r'(\d)([a-zA-Z\(])', r'\1*\2', expression) #regix
     return expression
 
 def solver(text):
     try:
         text=correct_phrase_if_incorrect(text)
         #trying to make differentiation bot
-        if text.startswith("differentiate "):
-            expression = text[len("differentiate "):].strip()
+        if text.startswith("differentiate ") or text.startswith("derivative of "):
+            prefix = "differentiate " if text.startswith("differentiate ") else "derivative of "
+            expression = convert_math_Exp(text[len(prefix):].strip())
             x = sympy.Symbol("x")
             expression = expression.replace("^","**")
             result = sympy.diff(sympy.sympify(expression),x)
             return "Derivative: "+str(result)
-        if text.startswith("derivative of "):
-            expression = text[len("derivative of "):].strip()
-            x = sympy.Symbol("x")
-            expression = expression.replace("^", "**")
-            result = sympy.diff(sympy.sympify(expression),x)
-            return "Derivative: " + str(result)
+        # if text.startswith("derivative of "):
+        #     expression = convert_math_Exp[len("derivative of "):].strip()
+        #     x = sympy.Symbol("x")
+        #     expression = expression.replace("^", "**")
+        #     result = sympy.diff(sympy.sympify(expression),x)
+        #     return "Derivative: " + str(result)
         
         #test for integration
-        if text.startswith("integrate "):
-            expression = text[len("integrate "):].strip()
+        if text.startswith("integrate ") or text.startswith("integral of "):
+            prefix = "integrate " if text.startswith("integrate ") else "integral of "
+            expression = text[len(prefix):].strip()
             x = sympy.Symbol("x")
             expression = expression.replace("^","**")
             result = sympy.integrate(sympy.sympify(expression),x)
             return "Integral: " + str(result) + " + C"
-        if text.startswith("integral of"):
-            expression = text[len("integral of "):].strip()
-            x = sympy.Symbol("x")
-            expression = expression.replace("^","**")
-            result = sympy.integrate(sympy.sympify(expression),x)
-            return "Integral: " + str(result) + " + C"
+        # if text.startswith("integral of"):
+        #     expression = text[len("integral of "):].strip()
+        #     x = sympy.Symbol("x")
+        #     expression = expression.replace("^","**")
+        #     result = sympy.integrate(sympy.sympify(expression),x)
+        #     return "Integral: " + str(result) + " + C"
         
         #testing limit exp
         if text.startswith("limit "):
@@ -702,29 +715,27 @@ def solver(text):
             #limit x^3 (x->3)
             if " as x approaches " in expression:
                 parts = expression.split(" as x approaches ")
-                equation = parts[0].strip()
+                equation = convert_math_Exp(parts[0].strip()).replace("^","**")
                 value = parts[1].strip()
                 x = sympy.Symbol("x")
-                equation = equation.replace("^","**")
                 result = sympy.limit(sympy.sympify(equation), x, sympy.sympify(value))
                 return "Limit: " +str(result)
             return "Please use: limit expression as x approaches value"
         #factors
-        if text.startswith("factorize"):
-            expression = text[len("factorize "):].strip()
-            expression = expression.replace("^","**")
+        if text.startswith("factorize") or text.startswith("factor"):
+            prefix = "factorize " if text.startswith("factorize ") else "factor "
+            expression = convert_math_Exp(text[len("factorize "):].strip()).replace("^","**")
             result = sympy.factor(sympy.sympify(expression))
             return "Factorized: " + str(result)
         
         #equations
         if "=" in text:
-            parts =text.split("=")
+            clean_text = convert_math_Exp(text)
+            parts =clean_text.split("=")
             if len(parts) == 2:
-                left = parts[0].strip()
-                right = parts[1].strip()
+                left = parts[0].strip().replace("^", "**")
+                right = parts[1].strip().replace("^", "**")
                 x= sympy.Symbol("x")
-                left = left.replace("^","**")
-                right = right.replace("^","**")
                 equation = sympy.Eq(sympy.sympify(left) , sympy.sympify(right))
                 result = sympy.solve(equation,x)
                 if result:
@@ -733,24 +744,21 @@ def solver(text):
         
         #simplify questions
         if text.startswith("simplify "):
-            expression = text[len("simplify "):].strip()
-            expression = expression.replace("^","**")
+            expression = convert_math_Exp(text[len("simplify "):].strip()).replace("^","**")
             result = sympy.simplify(sympy.sympify(expression))
             return "Simplified: " + str(result)
         
         #expand the following questions
         if text.startswith("expand "):
-            expression = text[len("expand "):].strip()
-            expression = expression.replace("^","**")
+            expression = convert_math_Exp(text[len("expand "):].strip()).replace("^","**")
+            # expression = expression.replace("^","**")
             result=sympy.expand(sympy.sympify(expression))
             return "Expanded: " + str(result)
         
         #easy peasy calc
         expression = convert_math_Exp(text)
-        expression = expression.replace("^","**")
-        expression = expression.replace("√","sqrt")
-        result = sympy.simplify(expression)
-        result = sympy.simplify(result)
+        expression = expression.replace("^","**").replace("√","sqrt")
+        result = sympy.sympify(expression)
         return "Answer: " + str(result)
     
     except Exception as e:
@@ -781,9 +789,70 @@ awaiting_location = False
 #MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN #
 #MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN #
 
-while True:
-    user = input("You: ")
+def main_data(raw):
+    global awaiting_location
+    user = raw
     user = normalisation(user)
+    
+    #terminating words
+    if user in terminators:
+        raw_response ="Bot: Goodbye!"
+        return clean_bot_response(raw_response)
+        # break
+        
+    for keywords, reply in key_convo:
+        if contains_keyword(user,keywords):
+            return clean_bot_response("Bot: " + reply)
+    
+    #storage
+    name = get_name(user)
+    if name is not None:
+        memory["name"]=name
+        save_memory()
+        raw_response = "Bot: Nice to meet you, "+name+"!"
+        return clean_bot_response(raw_response)
+        # continue
+    age = get_age(user)
+    if age is not None:
+        memory["age"]=age
+        save_memory()
+        raw_response = "Bot: I'll remember that you are " + str(age) + " years old."
+        return clean_bot_response(raw_response)
+        # continue
+    address = get_address(user)
+    if address is not None:
+        memory["address"] = address
+        save_memory()
+        raw_response = "Bot: I'll remember that you live in " + address + "."
+        return clean_bot_response(raw_response)
+        # continue
+    
+    memory_result = memory_response(user)
+    if memory_result is not None:
+        raw_response = "Bot:", memory_result 
+        return clean_bot_response(raw_response)
+        # continue
+    
+    #state word check
+    if awaiting_location:
+        awaiting_location = False
+        place = user.strip() or get_location(user)
+        if not place:
+            raw_response = "Bot: Please enter a location"
+            return clean_bot_response(raw_response)
+            
+        context["last_location"]= place
+        context["last_intent"]="weather"
+        result = weather_response(place)
+        if result is None:
+            raw_response = "Bot: Sorry, I couldn't find weather data for '" + place + "'. Try a nearby bigger city or check the spelling?"
+            return clean_bot_response(raw_response)
+        else:
+            raw_response ="Bot: "+result
+            return raw_response
+        # continue
+    
+    
     intent = intent_detector(user)
     entities = extract_entities(user,intent)
     if fllwup(user):
@@ -791,55 +860,8 @@ while True:
             intent= context["last_intent"]
         if context["last_location"] is not None:
             entities["location"] = context["last_location"]
-    print("Intent:", intent)
-    print("Entities:", entities)
-    
-    #storage
-    name = get_name(user)
-    if name is not None:
-        memory["name"]=name
-        save_memory()
-        print("Bot: Nice to meet you, "+name+"!")
-        continue
-    age = get_age(user)
-    if age is not None:
-        memory["age"]=age
-        save_memory()
-        print("Bot: I'll remember that you are " + str(age) + " years old.")
-        continue
-    address = get_address(user)
-    if address is not None:
-        memory["address"] = address
-        save_memory()
-        print("Bot: I'll remember that you live in " + address + ".")
-        continue
-    
-    memory_result = memory_response(user)
-    if memory_result is not None:
-        print("Bot:", memory_result)
-        continue
-    
-    #state word check
-    if awaiting_location:
-        place = user.strip()
-        if not place:
-            print("Bot: Please enter a location")
-            continue
-        context["last_location"]= place
-        context["last_intent"]="weather"
-        result = weather_response(place)
-        if result is None:
-            print("Bot: Sorry, I couldn't find weather data for '" + place + "'. Try a nearby bigger city or check the spelling?")
-        else:
-            print("Bot: ",result)
-        awaiting_location =False
-        continue
-    
-    #terminating words
-    if user in terminators:
-        print("Bot: Goodbye!")
-        break
-    
+    # print("Intent:", intent)
+    # print("Entities:", entities)
     
     #weather report
     if intent=="weather":
@@ -848,43 +870,50 @@ while True:
             context["last_location"] = place
             
         if place is None:
-            print("Bot: Which state would you like the weather for?")
             awaiting_location=True
-            continue
+            raw_response = "Bot: Which state would you like the weather for?"
+            return clean_bot_response(raw_response)
+            # continue
         result=weather_response(place)
         if result is None:
-            print("Bot: Sorry, I couldn't find weather data for '" + place + "'. Try a nearby bigger city or check the spelling?")
+            raw_response = "Bot: Sorry, I couldn't find weather data for '" + place + "'. Try a nearby bigger city or check the spelling?"
+            return clean_bot_response(raw_response)
         else: 
-            print("Bot: ", result)
+            raw_response = "Bot: "+ result
+            return clean_bot_response(raw_response)
         
         context["last_intent"]="weather"
-        continue
+        # continue
     
     #time report
     if intent=="time":
         current_time = get_time()
-        print("Bot: The current time is", current_time)
-        continue
+        raw_response = "Bot: The current time is"+ current_time
+        return clean_bot_response(raw_response)
+        # continue
     
     #math caclulations
     if intent=="math":
         result = solver(user)
         if result is not None:
-            print("Bot: ",result)
+            raw_response ="Bot: "+result
+            return clean_bot_response(raw_response)
         else:
-            print("Bot: I couldn't solve that mathematical expression.")
-        continue
+            raw_response = "Bot: I couldn't solve that mathematical expression."
+            return clean_bot_response(raw_response)
+        # continue
     
     #key_word looker
     found = False
     for keywords, reply in key_convo:
         #runs till each element in keywords
         if contains_keyword(user,keywords):
-            print("Bot:",reply)
+            raw_response = "Bot:"+reply
+            return clean_bot_response(raw_response)
             found = True
             break
-    if found:
-        continue
+    # if found:
+    #     # continue
     
     #definition check
     if intent=="definition":
@@ -893,30 +922,186 @@ while True:
         if result is None:
             result1 = get_wikipedia(word)
             if result1 is None:
-                print("I am still an undertrained chatbot. I don't know the above information. Please feel free to ask something else.")
+                raw_response = "I am still an undertrained chatbot. I don't know the above information. Please feel free to ask something else."
+                return clean_bot_response(raw_response)
             else:
                 title, sumry = result1
-                print("Bot: ",sumry)
-                print("/source:",title)
-            continue
+                raw_response = "Bot: "+sumry+"\n/source" + title
+                return clean_bot_response(raw_response)
+                # ("/source:",title)
+            # continue
         else:
             define, example = result #adds result values of get_definiton(returns define and example)
             print("Bot:", define) #prints word and its sentence
             if example:
-                print("The word can be used as : ", example[0])
-        continue
+                raw_response = "The word can be used as : "+ example[0]
+                return clean_bot_response(raw_response)
+        # continue
     
     #ques check
     if intent=="wikipedia":
         topic = get_topics(user)
         result = get_wikipedia(topic)
         if result is None:
-            print("I am still an undertrained chatbot. I don't know the above information. Please feel free to ask something else.")
+            raw_response = "I am still an undertrained chatbot. I don't know the above information. Please feel free to ask something else."
+            return clean_bot_response(raw_response)
         else:
             title, sumry = result
-            print("Bot: ",sumry)
-            print("/source:",title)
-        continue
+            raw_response = "Bot: "+sumry+"\n/source" + title
+            return clean_bot_response(raw_response)
+        # continue
 
     #if passes fails all the tests above then execute this at end;
-    print("Bot: Sorry, I don't understand that yet.")
+    raw_response = "Bot: Sorry, I don't understand that yet."
+    return clean_bot_response(raw_response)
+
+root = tk.Tk()
+root.title("Jaggery")
+root.geometry("450x600")
+root.configure(bg="#0A0A0A")
+
+header_frame = tk.Frame(root, bg="#080808")
+header_frame.pack(fill=tk.X)
+
+#header content
+header_label = tk.Label(
+    header_frame,
+    text="Jaggery",
+    font = ("Helvetica", 12, "bold"),
+    fg="#FFC107", 
+    bg="#080808"
+)
+
+#alignment
+header_label.pack(side=tk.LEFT, padx=15, pady=10)
+
+def clear_chat():
+    for child in scrollable_frame.winfo_children():
+        child.destroy()
+
+#dlt button
+clear_btn = tk.Button(
+    header_frame,
+    text="Clear Chat",
+    font=("Helvetica",9,"bold"),
+    bg="#EF4444", 
+    fg="#F5F5F5",
+    bd = 0,
+    padx = 10,
+    pady = 3,
+    command = clear_chat #linking the button
+)
+clear_btn.pack(side=tk.RIGHT, padx=15)
+
+chat_container = tk.Frame(root, bg="#0F0F0F")
+chat_container.pack(padx=10, pady=10, fill= tk.BOTH, expand = True)
+
+canvas = tk.Canvas(chat_container, bg="#0F0F0F", highlightthickness=0)
+scrollbar = tk.Scrollbar(
+    chat_container,
+    command=canvas.yview,
+    bg="#171717",
+    troughcolor="#0A0A0A",
+    activebackground="#FFC107"
+)
+scrollable_frame = tk.Frame(canvas,bg="#181825")
+scrollable_frame.bind(
+    "<Configure>",
+    lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+)
+canvas.create_window((0,0), window=scrollable_frame, anchor="nw")
+canvas.configure(yscrollcommand=scrollbar.set)
+canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+canvas.bind(
+    "<Configure>",
+    lambda e: canvas.itemconfig(canvas.find_withtag("all")[0], width=e.width)
+)
+
+#msg renderer
+def add_message_bubble(message, sender="user"):
+    row_frame = tk.Frame(scrollable_frame, bg = "#181825", pady=4)
+    row_frame.pack(fill=tk.X, expand=True)
+
+    #design sender
+    if sender=="user":
+        bg_color = "#0A0A0A"
+        fg_color ="#FFD43B"
+        anchor_side=tk.RIGHT
+        label_title = "You"
+    else:
+        bg_color = "#171717"
+        fg_color = "#cdd6f4"
+        anchor_side = tk.LEFT
+        label_title = "Bot"
+        
+    #frame
+    bubble_frame=tk.Frame(row_frame, bg = bg_color, padx=10, pady= 6)
+    title_lbl = tk.Label(
+        bubble_frame, text=label_title,
+        font=("Helvetica", 8, "bold"),
+        bg=bg_color,
+        fg="#A3A3A3" if sender == "user" else "#FFFFFF"
+    )
+    title_lbl.pack(anchor="w" if sender == "bot" else "e",fill=tk.X)
+    
+    msg_lbl = tk.Label(
+        bubble_frame, 
+        text=str(message), 
+        font=("Helvetica", 10),
+        bg=bg_color, 
+        fg=fg_color, 
+        wraplength=220,
+        justify=tk.LEFT if sender == "bot" else tk.RIGHT
+    )
+    msg_lbl.pack(anchor="w" if sender == "bot" else "e", fill=tk.X)
+    bubble_frame.pack(side = anchor_side, padx=10)
+
+    scrollable_frame.update_idletasks()
+    canvas.update_idletasks()
+    canvas.yview_moveto(1.0)
+
+input_frame = tk.Frame(root,bg="#080808", pady=10, padx=10)
+input_frame.pack(fill=tk.X, side=tk.BOTTOM)
+
+#user entry
+user_entry = tk.Entry(
+    input_frame,
+    font=("Helvetica",11),
+    bg="#171717",
+    fg="#F5F5F5",
+    insertbackground="#FFC107",
+    bd = 0,
+    relief=tk.FLAT
+)
+user_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady = 6, padx=(0,8))
+user_entry.focus()
+
+#finally send button
+send_btn = tk.Button(
+    input_frame,
+    text="Send",
+    font=("Helvetica", 10,"bold"),
+    bg="#FFC107", 
+    fg="#0A0A0A", 
+    bd=0, 
+    padx=15, 
+    pady=4
+    
+)
+send_btn.pack(side=tk.RIGHT)
+
+#message handler
+def send_message():
+    raw_txt = user_entry.get().strip()
+    if not raw_txt:
+        return
+    add_message_bubble(raw_txt, sender="user")
+    user_entry.delete(0,tk.END)
+    bot_response = main_data(raw_txt)
+    add_message_bubble(bot_response,sender="bot")
+send_btn.config(command=send_message)
+user_entry.bind("<Return>", lambda event: send_message())
+#header
+
+root.mainloop()
