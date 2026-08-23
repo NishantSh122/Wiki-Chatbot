@@ -196,6 +196,7 @@ intents = {
         ]
     }
 }
+
 #fetching name for the user data
 def get_name(text):
     phrases= [
@@ -298,17 +299,19 @@ def contains_keyword(text,keywords):
 
 #making an intention detector so that this cool bot can give answers based on users intention
 def intent_detector(text):
-    # scores = {}
-    # for intent_name,data in intents.items():
-    #     score = 0
-    #     for keyword in data["keywords"]:
-    #         if keyword in text:
-    #             score +=1
-    #     scores[intent_name] =score
-    # top_intent = max(scores,key=scores.get)
-    # if scores[top_intent]==0:
-    #     return None
-    # return top_intent
+    scores = {}
+    for intent_name,data in intents.items():
+        score = 0
+        for keyword in data["keywords"]:
+            if keyword in text:
+                score +=1
+        scores[intent_name] =score
+    top_intent = max(scores,key=scores.get)
+    if scores[top_intent]==0:
+        return None
+    
+    #filter check
+    #jarurat nhi thi aise hi dal diya :)
     if ismques(text):
         return "math"
     if isdques(text):
@@ -319,6 +322,7 @@ def intent_detector(text):
         return "time"
     if isfques(text):
             return "wikipedia"
+    return top_intent
 
 #segregating the words to be handled by apis. THE SO CALLED ENTITIES
 def extract_entities(text,intent):
@@ -712,7 +716,25 @@ def solver(text):
     except Exception as e:
         print("Math Error name - ", e)
         return None
-    
+def fllwup(text):
+    fllwup_phrases={
+        "what about", "how about","and tomorrow",
+        "and today", "what about tomorrow",
+        "what about today", "how about tomorrow","how about today",
+        "there", "that place", "the same place"
+    }
+    for phrase in fllwup_phrases:
+        if phrase in text:
+            return True
+    return False
+
+#IMPORTANT CONTEXT STORAGE TO GET A CONTINUOUS FLOW
+context={
+    "last_intent" : None,
+    "last_location" : None,
+    "last_topic" : None,
+}
+
 awaiting_location = False
 
 #MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN # 
@@ -724,6 +746,11 @@ while True:
     user = normalisation(user)
     intent = intent_detector(user)
     entities = extract_entities(user,intent)
+    if fllwup(user):
+        if context["last_intent"] is not None:
+            intent= context["last_intent"]
+        if context["last_location"] is not None:
+            entities["location"] = context["last_location"]
     print("Intent:", intent)
     print("Entities:", entities)
     
@@ -752,14 +779,14 @@ while True:
         print("Bot:", memory_result)
         continue
     
-    #intent detector setup
-    intent = intent_detector(user)
     #state word check
     if awaiting_location:
         place = user.strip()
         if not place:
             print("Bot: Please enter a location")
             continue
+        context["last_intent"]= place
+        context["last_intent"]="weather"
         result = weather_response(place)
         if result is None:
             print("Bot: Sorry, I couldn't find weather data for '" + place + "'. Try a nearby bigger city or check the spelling?")
@@ -777,6 +804,9 @@ while True:
     #weather report
     if intent=="weather":
         place = entities.get("location")
+        if place is not None:
+            context["last_location"] = place
+            
         if place is None:
             print("Bot: Which state would you like the weather for?")
             awaiting_location=True
@@ -786,6 +816,8 @@ while True:
             print("Bot: Sorry, I couldn't find weather data for '" + place + "'. Try a nearby bigger city or check the spelling?")
         else: 
             print("Bot: ", result)
+        
+        context["last_intent"]="weather"
         continue
     
     #time report
