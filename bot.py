@@ -292,9 +292,15 @@ def fuzzy_match(text,choices,cutoff=0.7):
     return None
 
 def contains_keyword(text,keywords):
+    words = text.split()
     for keyword in keywords:
-        if keyword in text:
-            return True
+        keyword_words = keyword.split()
+        if len(keyword_words) ==1:
+            if keyword in words:
+                return True
+        else:
+            if keyword in text:
+                return True
     return False
 
 #making an intention detector so that this cool bot can give answers based on users intention
@@ -302,9 +308,15 @@ def intent_detector(text):
     scores = {}
     for intent_name,data in intents.items():
         score = 0
+        words = text.split()
         for keyword in data["keywords"]:
-            if keyword in text:
+            if contains_keyword(text,[keyword]):
                 score +=1
+                continue
+            if " " not in keyword:
+                match = fuzzy_match(keyword, words, cutoff=0.8)
+                if match is not None:
+                    score += 1
         scores[intent_name] =score
     top_intent = max(scores,key=scores.get)
     if scores[top_intent]==0:
@@ -312,16 +324,16 @@ def intent_detector(text):
     
     #filter check
     #jarurat nhi thi aise hi dal diya :)
-    if ismques(text):
-        return "math"
-    if isdques(text):
-        return "definition"
-    if isweather(text):
-            return "weather"
-    if istques(text):
-        return "time"
-    if isfques(text):
-            return "wikipedia"
+    # if ismques(text):
+    #     return "math"
+    # if isdques(text):
+    #     return "definition"
+    # if isweather(text):
+    #         return "weather"
+    # if istques(text):
+    #     return "time"
+    # if isfques(text):
+    #         return "wikipedia"
     return top_intent
 
 #segregating the words to be handled by apis. THE SO CALLED ENTITIES
@@ -593,6 +605,33 @@ def ismques(text):
         if tag in text:
             return True
     return False
+def correct_phrase_if_incorrect(text):
+    math_phrases = [
+        "calculate",
+        "solve",
+        "simplify",
+        "differentiate",
+        "derivative",
+        "integrate",    
+        "integral",
+        "factorize",
+        "factor",
+        "expand",
+        "limit",
+        "sqrt",
+        "square root"
+    ]
+    words = text.split()
+    if not words:
+        return text
+    first_word = words[0]
+    if first_word in math_phrases:
+        return text
+    match = fuzzy_match(first_word, math_phrases, cutoff=0.7)
+    if match is not None:
+        words[0] = match
+        return " ".join(words)
+    return text
 
 def convert_math_Exp(text):
     mat_phrases={
@@ -627,6 +666,7 @@ def convert_math_Exp(text):
 
 def solver(text):
     try:
+        text=correct_phrase_if_incorrect(text)
         #trying to make differentiation bot
         if text.startswith("differentiate "):
             expression = text[len("differentiate "):].strip()
@@ -785,7 +825,7 @@ while True:
         if not place:
             print("Bot: Please enter a location")
             continue
-        context["last_intent"]= place
+        context["last_location"]= place
         context["last_intent"]="weather"
         result = weather_response(place)
         if result is None:
