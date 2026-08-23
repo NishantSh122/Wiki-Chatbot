@@ -933,8 +933,12 @@ def main_data(raw):
         else:
             define, example = result #adds result values of get_definiton(returns define and example)
             print("Bot:", define) #prints word and its sentence
+            # if example:
             if example:
-                raw_response = "The word can be used as : "+ example[0]
+                raw_response = define+ "\nThe word can be used as : "+ example[0]
+                return clean_bot_response(raw_response)
+            else :
+                raw_response = define
                 return clean_bot_response(raw_response)
         # continue
     
