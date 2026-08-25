@@ -35,14 +35,30 @@ GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 WTTR_URL = "https://wttr.in"
 memory_file = "memory.json"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-memory_file = os.path.join(BASE_DIR, "memory.json")
 
 default_memory = {
     "name": None,
     "age": None,
     "address": None,
-    "work": None
+    "work": None,
+    "facts":[]
 }
+memory_file = os.path.join(BASE_DIR, "memory.json")
+general_memory_file = os.path.join(BASE_DIR, "general_memory.json")
+if os.path.exists(general_memory_file):
+    try:
+        with open(general_memory_file, "r") as file: #opening in read only
+            general_memory = json.load(file) #load file
+    except json.JSONDecodeError:
+        general_memory = {"memories":[]}
+else:
+    general_memory = {"memories":[]}
+
+def save_general_memory():
+    with open(general_memory_file, "w") as file: #open in writeable state
+        json.dump(general_memory, file, indent=4) #dump general_memory in file with indent=4
+#i have used indent for the representation of data so that if this program fails we can see the data still
+
 def save_memory():
     with open(memory_file,"w") as file:
         json.dump(memory,file,indent=4)
@@ -51,12 +67,78 @@ if os.path.exists(memory_file):
     try:
         with open(memory_file, "r") as file:
             memory = json.load(file)
+        if "facts" not in memory:
+            memory["facts"] =[]
     except (json.JSONDecodeError):
         memory = default_memory.copy()
+        save_memory()
 else:
     memory=default_memory.copy()
     save_memory()
     
+
+#a remember function to remember data:
+#searching memory:
+def srch_mmry(text):
+    memories = general_memory.get("memories",[])
+    if not memories:
+        return None
+    best_mmry = None
+    best_score = 0
+    txt_wrds = set(text.split())
+    for item in memories:
+        mmry_text = item.get("memory","")
+        mmry_words = set(mmry_text.split())
+        common_wrds = txt_wrds.intersection(mmry_words)
+        score=len(common_wrds)
+        if score>best_score:
+            best_score = score
+            best_mmry= mmry_text
+    if best_score==0:
+        return None
+    return best_mmry
+
+def ismemques(text):
+    mmry_question_phrases =[
+        "what did i tell you",
+        "what do you remember",
+        "do you remember",
+        "what was my",
+        "what is my",
+        "when is my",
+        "when was my",
+        "what did i say about"
+    ]
+    content = None
+    for phrase in mmry_question_phrases:
+        if text.startswith(phrase):
+            content= text[len(phrase):].strip()
+            break
+    if content is None:
+        return None
+    memories = general_memory.get("memories",[])
+    if not memories:
+        return "I don't remember anything yet."
+    
+    content_wrds = set(content.lower().split())
+    useless_wrds={"my", "the", "is", "are", "was", "were",
+        "a", "an", "of", "to", "in", "about"}
+    content_wrds-=useless_wrds
+    matches = []
+    for item in memories:
+        information = item.get("memory","")
+        information_wrds = set(information.split())
+        information_wrds -= useless_wrds
+        common_wrds = content_wrds.intersection(information_wrds)
+        if len(common_wrds)>=1:
+            matches.append(item.get("memory",""))
+    if not matches:
+        return "I don't remember anything about that"
+    res = "I remember: \n"
+    for information in matches:
+        res += "→ "+ information+"\n"
+    return res.strip()
+
 key_convo = [
     (["hello","hey","helo",
       "wassup","sup","whats up",
@@ -724,7 +806,7 @@ def solver(text):
         #factors
         if text.startswith("factorize") or text.startswith("factor"):
             prefix = "factorize " if text.startswith("factorize ") else "factor "
-            expression = convert_math_Exp(text[len("factorize "):].strip()).replace("^","**")
+            expression = convert_math_Exp(text[len(prefix):].strip()).replace("^","**")
             result = sympy.factor(sympy.sympify(expression))
             return "Factorized: " + str(result)
         
@@ -785,6 +867,34 @@ context={
 
 awaiting_location = False
 
+def remember_data(text):
+    remember_phrases =[
+        "remember that ",
+        "remember ",
+        "keep in mind that ",
+        "keep in mind ",
+        "don't forget that ",
+        "dont forget that ",
+        "note that ",
+        "save that ",
+        "save ",
+        "store ",
+        "store this ",
+        "save this ",
+        "store that "
+    ]
+    for phrase in remember_phrases:
+        if text.startswith(phrase):
+            memory_text = text[len(phrase):].strip()
+            
+            if not memory_text:
+                return None
+            general_memory["memories"].append({"memory":memory_text, "data_saved": datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
+            save_general_memory()
+            return "I will remember that, "
+
+    return None
+    
 #MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN # 
 #MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN #
 #MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN #
@@ -793,6 +903,46 @@ def main_data(raw):
     global awaiting_location
     user = raw
     user = normalisation(user)
+    
+    remembered = remember_data(user)
+    if remembered is not None:
+        return clean_bot_response("Bot: " + remembered)
+    
+    memory_result = ismemques(user)
+    if memory_result is not None:
+        return memory_result
+    
+    if awaiting_location:
+        if user in weather_states:
+            awaiting_location=False
+            A_place = user
+            context["last_location"] = A_place
+            context["last_intent"] = "weather"
+            result = weather_response(A_place)
+            if result is None:
+                raw_response=("Bot: Sorry, I couldn't find weather data for '"
+                + A_place +
+                "'. Try a nearby bigger city or check the spelling?")
+                return clean_bot_response(raw_response)
+            raw_response = "Bot: "+result
+            return clean_bot_response(raw_response)
+        
+        place =  get_location(user)
+        if place is not None:
+            awaiting_location = False
+            A_place = place
+            context["last_location"]= A_place
+            context["last_intent"]="weather"
+            result = weather_response(A_place)
+            
+            if result is None:
+                raw_response = "Bot: Sorry, I couldn't find weather data for '" + A_place + "'. Try a nearby bigger city or check the spelling?"
+                return clean_bot_response(raw_response)
+            raw_response ="Bot: "+result
+            # context["last_intent"]="weather"
+            return clean_bot_response(raw_response)
+        # continue
+        awaiting_location=False
     
     #terminating words
     if user in terminators:
@@ -832,28 +982,11 @@ def main_data(raw):
         raw_response = "Bot:", memory_result 
         return clean_bot_response(raw_response)
         # continue
-    
     #state word check
-    if awaiting_location:
-        awaiting_location = False
-        place = user.strip() or get_location(user)
-        if not place:
-            raw_response = "Bot: Please enter a location"
-            return clean_bot_response(raw_response)
-            
-        context["last_location"]= place
-        context["last_intent"]="weather"
-        result = weather_response(place)
-        if result is None:
-            raw_response = "Bot: Sorry, I couldn't find weather data for '" + place + "'. Try a nearby bigger city or check the spelling?"
-            return clean_bot_response(raw_response)
-        else:
-            raw_response ="Bot: "+result
-            return raw_response
-        # continue
     
     
     intent = intent_detector(user)
+    
     entities = extract_entities(user,intent)
     if fllwup(user):
         if context["last_intent"] is not None:
@@ -888,7 +1021,7 @@ def main_data(raw):
     #time report
     if intent=="time":
         current_time = get_time()
-        raw_response = "Bot: The current time is"+ current_time
+        raw_response = "Bot: The current time is "+ current_time
         return clean_bot_response(raw_response)
         # continue
     
@@ -935,11 +1068,10 @@ def main_data(raw):
             print("Bot:", define) #prints word and its sentence
             # if example:
             if example:
-                raw_response = define+ "\nThe word can be used as : "+ example[0]
-                return clean_bot_response(raw_response)
+                raw_response = "Definition" + define+ "\nThe word can be used as : "+ example[0]
             else :
-                raw_response = define
-                return clean_bot_response(raw_response)
+                raw_response = "Definition"+define
+            return clean_bot_response(raw_response)
         # continue
     
     #ques check
@@ -1102,6 +1234,7 @@ def send_message():
         return
     add_message_bubble(raw_txt, sender="user")
     user_entry.delete(0,tk.END)
+    
     bot_response = main_data(raw_txt)
     add_message_bubble(bot_response,sender="bot")
 send_btn.config(command=send_message)
