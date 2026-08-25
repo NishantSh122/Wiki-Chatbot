@@ -1,20 +1,57 @@
 {
     "memories": [
         {
-            "memory": "my friend name is abhi",
-            "data_saved": "2026-08-25 16:48:41"
+            "memory": "my name is nishant",
+            "subject": "my name",
+            "attribute": "description",
+            "value": "nishant",
+            "type": "fact",
+            "keywords": {
+                "description": "nishant"
+            },
+            "date_saved": "2026-08-25 19:56:53"
         },
         {
-            "memory": "tomorrow is eid",
-            "data_saved": "2026-08-25 16:50:13"
+            "memory": "my friend name is yash nigam",
+            "subject": "yash nigam",
+            "attribute": "friend",
+            "value": "yash nigam",
+            "type": "fact",
+            "keywords": {
+                "friend": "yash nigam"
+            },
+            "date_saved": "2026-08-25 19:57:31"
         },
         {
-            "memory": "my friend name is abhi",
-            "data_saved": "2026-08-25 17:01:23"
+            "memory": "i am smart",
+            "subject": null,
+            "attribute": null,
+            "value": null,
+            "type": "memory",
+            "keywords": {},
+            "date_saved": "2026-08-25 19:59:29"
         },
         {
-            "memory": "my friend name is yash",
-            "data_saved": "2026-08-25 17:01:43"
+            "memory": "aryan is my friend",
+            "subject": "aryan",
+            "attribute": "friend",
+            "value": "aryan",
+            "type": "fact",
+            "keywords": {
+                "friend": "aryan"
+            },
+            "date_saved": "2026-08-25 19:59:41"
+        },
+        {
+            "memory": "tomorrow is my physics exam",
+            "subject": "tomorrow",
+            "attribute": "physics exam",
+            "value": "tomorrow",
+            "type": "fact",
+            "keywords": {
+                "physics exam": "tomorrow"
+            },
+            "date_saved": "2026-08-25 19:59:53"
         }
     ]
 }

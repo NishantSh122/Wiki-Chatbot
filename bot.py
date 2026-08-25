@@ -83,22 +83,100 @@ def srch_mmry(text):
     memories = general_memory.get("memories",[])
     if not memories:
         return None
+    text= normalisation(text)
     best_mmry = None
     best_score = 0
     txt_wrds = set(text.split())
     for item in memories:
-        mmry_text = item.get("memory","")
+        mmry_text = normalisation(item.get("memory",""))
+        if not mmry_text:
+            continue
+        ##matching exactly
+        if text == mmry_text:
+            return item
+        ##fuzzy match
+        text_ratio = difflib.SequenceMatcher(
+            None,
+            text,
+            mmry_text
+        ).ratio()
+        
+        #removing dupicates
+        # txt_wrds = set(text.split())
         mmry_words = set(mmry_text.split())
-        common_wrds = txt_wrds.intersection(mmry_words)
-        score=len(common_wrds)
+        if txt_wrds and mmry_words:
+            common_wrds = txt_wrds.intersection(mmry_words)
+            word_score = (
+                len(common_wrds)
+                / max(len(txt_wrds), len(mmry_words))
+            )
+        else:
+            word_score = 0
+        ##subject match
+        subject_score = 0
+        subject = str(item.get("subject","")).lower().strip()
+        if subject:
+            if subject in txt_wrds:
+                subject_score=1.0
+            else:
+                subject_words = subject.split()
+                for word in txt_wrds:
+                    for subject_word in subject_words:
+                        similarity = difflib.SequenceMatcher(
+                            None,
+                            word,
+                            subject_word
+                        ).ratio()
+                    if similarity >=0.75:
+                        subject_score = similarity
+                        break
+        ##matching the keyword
+        keyword_score = 0 
+        keyword = item.get("keywords",{})
+        for key, value in keyword.items():
+            key = str(key).lower()
+            value = str(value).lower()
+            #exact keyword
+            if key in text:
+                keyword_score+=0.5
+            if value in text:
+                keyword_score+=0.5
+            #fuzzy keyword
+            if key not in txt_wrds:
+                for word in txt_wrds:
+                    similarity = difflib.SequenceMatcher(
+                        None,
+                        word,
+                        key
+                    ).ratio()
+                    if similarity >= 0.75:
+                        keyword_score +=0.35
+                        break
+        keyword_score = min(keyword_score,1.0)
+        
+        ##final score (made by ai)
+        score=(
+                  text_ratio*0.350
+                  + word_score*0.20
+                  + subject_score*0.30
+                  + keyword_score*0.15
+                  )
         if score>best_score:
             best_score = score
-            best_mmry= mmry_text
-    if best_score==0:
+            best_mmry= item
+        
+    #minimum match
+    if best_score<0.40:
         return None
     return best_mmry
 
 def ismemques(text):
+    text = normalisation(text)
+    text = resolve_memory_referece(text)
+    memories =general_memory.get("memories",[])
+    if not memories:
+        return None
+    
     mmry_question_phrases =[
         "what did i tell you",
         "what do you remember",
@@ -106,38 +184,101 @@ def ismemques(text):
         "what was my",
         "what is my",
         "when is my",
-        "when was my",
+        "when was my",  
         "what did i say about"
     ]
-    content = None
+    explicit_memory =False
     for phrase in mmry_question_phrases:
         if text.startswith(phrase):
+            explicit_memory =True
             content= text[len(phrase):].strip()
             break
-    if content is None:
+    if not explicit_memory:
+        question_wrds =[
+            "who",
+            "what",
+            "where",
+            "when",
+            "which"
+        ]
+        first_word = text.split()[0] if text else ""
+        if first_word not in question_wrds:
+            return None
+        content = text
+        possible_memory = srch_mmry(content)
+        if possible_memory is None:
+            return None
+        result = possible_memory
+    else:
+        result = srch_mmry(content)
+    if result is None:
         return None
-    memories = general_memory.get("memories",[])
-    if not memories:
-        return "I don't remember anything yet."
     
-    content_wrds = set(content.lower().split())
-    useless_wrds={"my", "the", "is", "are", "was", "were",
-        "a", "an", "of", "to", "in", "about"}
-    content_wrds-=useless_wrds
-    matches = []
-    for item in memories:
-        information = item.get("memory","")
-        information_wrds = set(information.split())
-        information_wrds -= useless_wrds
-        common_wrds = content_wrds.intersection(information_wrds)
-        if len(common_wrds)>=1:
-            matches.append(item.get("memory",""))
-    if not matches:
-        return "I don't remember anything about that"
-    res = "I remember: \n"
-    for information in matches:
-        res += "→ "+ information+"\n"
-    return res.strip()
+    #saving to context
+    subject = result.get("subject")
+    if subject:
+        context["last_subject"] = subject
+    
+    #answer with fact
+    attribute = result.get("attribute")
+    value = result.get("value")
+    if attribute and value is not None:
+        return(
+            "I remember: "
+            + str(attribute)
+            +" of "
+            + str(subject)
+            +" is "
+            + str(value)
+        )
+    return(
+        "I remember: "
+        + result.get(
+            "memory",
+            "something about that"
+        )
+    )
+
+    # if content is None:
+    #     return None
+    # memories = general_memory.get("memories",[])
+    # if not memories:
+    #     return "I don't remember anything yet."
+    # ##fuzzy match
+    # result = srch_mmry(content)
+    # if result is None:
+    #     return "I don't remember anything about that."
+    # #if keyword there
+    # keywords =result.get("keywords",{})
+    # if keywords:
+    #     for key,value in keywords.items():
+    #         if key in content or difflib.SequenceMatcher(
+    #             None,
+    #             key,
+    #             content
+    #         ).ratio() >=0.70:
+    #             return "I remember: " + key + " is " + str(value)
+    # return "I remember: " + result.get(
+    #     "memory","something about that"
+    # )
+    # content_wrds = set(content.lower().split())
+    # useless_wrds={"my", "the", "is", "are", "was", "were",
+    #     "a", "an", "of", "to", "in", "about"}
+    # content_wrds-=useless_wrds
+    # matches = []
+    # for item in memories:
+    #     information = item.get("memory","")
+    #     information_wrds = set(information.split())
+    #     information_wrds -= useless_wrds
+    #     common_wrds = content_wrds.intersection(information_wrds)
+    #     if len(common_wrds)>=1:
+    #         matches.append(item.get("memory",""))
+    # if not matches:
+    #     return "I don't remember anything about that"
+    # res = "I remember: \n"
+    # for information in matches:
+    #     res += "→ "+ information+"\n"
+    # return res.strip()
 
 key_convo = [
     (["hello","hey","helo",
@@ -863,9 +1004,87 @@ context={
     "last_intent" : None,
     "last_location" : None,
     "last_topic" : None,
+    "last_subject":None,
+    "last_memory":None,
 }
 
 awaiting_location = False
+def generate_keywords(subject,attribute,value):
+    keywords ={}
+    if attribute and value is not None:
+        keywords[str(attribute).lower()] = str(value).lower()
+    return keywords
+def extract_fact(text):
+    text = normalisation(text)
+    #extract year and is letter regix
+    #age
+    match = re.match(
+        r"^(.+?)\s+is\s+(\d+)\s+years?\s+old$",
+        text
+    )
+    if match:
+        subject = match.group(1).strip()
+        age = int(match.group(2))
+        
+        return{
+            "memory": text,
+            "subject": subject,
+            "attribute": "age",
+            "value": age,
+            "type": "fact",
+            "keywords": generate_keywords(subject,"age",age)
+        }
+    
+    match = re.match(
+        r"^my\s+(.+?)'?s?\s+name\s+is\s+(.+)$",
+        text
+    )
+    if match:
+        relation = match.group(1).strip()
+        value = match.group(2).strip()
+        return {
+            "memory":text,
+            "subject": value,
+            "attribute": relation,
+            "value": value,
+            "type": "fact",
+            "keywords": generate_keywords(value,relation,value)
+        }
+    #removing the left regix of is/my/'s
+    #relation
+    match = re.match(
+         r"^(.+?)\s+is\s+my\s+(.+)$",
+        text
+    )
+    if match:
+        subject = match.group(1).strip()
+        relation = match.group(2).strip()
+        return {
+            "memory": text,
+            "subject": subject,
+            "attribute": relation,
+            "value": subject,
+            "type": "fact",
+            "keywords": generate_keywords(subject,relation,subject)
+        }
+            
+    #qualities
+    match = re.match(
+        r"^(.+?)\s+is\s+(.+)$",
+        text
+    )
+    if match:
+        subject = match.group(1).strip()
+        value = match.group(2).strip()
+        return{
+            "memory": text,
+            "subject": subject,
+            "attribute": "description",
+            "value": value,
+            "type": "fact",
+            "keywords": generate_keywords(subject,"description",value)
+        }
+    return None
 
 def remember_data(text):
     remember_phrases =[
@@ -883,18 +1102,98 @@ def remember_data(text):
         "save this ",
         "store that "
     ]
-    for phrase in remember_phrases:
+    memory_text = None
+    for phrase in sorted(remember_phrases, key = len, reverse=True):
         if text.startswith(phrase):
             memory_text = text[len(phrase):].strip()
-            
-            if not memory_text:
-                return None
-            general_memory["memories"].append({"memory":memory_text, "data_saved": datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
-            save_general_memory()
-            return "I will remember that, "
-
-    return None
+            break
+    if not memory_text:
+        return None
     
+    ##create structured facts
+    new_mmry = extract_fact(memory_text)
+    #if didn't match with any still save it
+    if new_mmry is None:
+        new_mmry={
+            "memory": memory_text,
+            "subject": None,
+            "attribute": None,
+            "value": None,
+            "type": "memory",
+            "keywords": {}
+        }
+    #duplicate check for exact keys
+    memory_text = normalisation(memory_text)
+    for old_memory in general_memory["memories"]:
+        old_text = normalisation(old_memory.get("memory",""))
+        if old_text == memory_text:
+            return "I already remember that."
+    
+    ##fuzzy check
+    for old_memory in general_memory["memories"]:
+        old_text = normalisation(old_memory.get("memory",""))
+        text_similarity = difflib.SequenceMatcher(
+            None,
+            memory_text,
+            old_text
+        ).ratio()
+        structured_match = 0
+        if (new_mmry.get("subject") is not None and old_memory.get("subject") is not None):
+            subject_similarity = difflib.SequenceMatcher(
+                None,
+                str(new_mmry["subject"]),
+                str(old_memory["subject"])
+            ).ratio()
+        else:
+            subject_similarity = 0
+        if(new_mmry.get("attribute") is not None
+        and old_memory.get("attribute") is not None):
+            attribute_similarity = difflib.SequenceMatcher(
+                None,
+                str(new_mmry["attribute"]),
+                str(old_memory["attribute"])
+            ).ratio()
+        else:
+            attribute_similarity=0
+        if(new_mmry.get("value")is not None and old_memory.get("value") is not None):
+            value_similarity = difflib.SequenceMatcher(
+                None,
+                str(new_mmry["value"]),
+                str(old_memory["value"])
+            ).ratio()
+        else:
+            value_similarity=0
+        structured_score =(subject_similarity*0.5 + attribute_similarity*0.25 + value_similarity*0.25)
+        final_duplicate_score = (text_similarity*0.5+structured_score*0.5)
+        if final_duplicate_score>=0.88:
+            return("I already remember something very similar: " + old_text)
+        
+    ##saveing
+    new_mmry["date_saved"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    general_memory["memories"].append(new_mmry)
+    save_general_memory()
+    return "I will remember that, "
+
+def resolve_memory_referece(text):
+    text = normalisation(text)
+    if not context.get("last_subject"):
+        return text
+    subject = context["last_subject"]
+    pronouns = {
+        "he":subject,
+        "him": subject,
+        "his": subject,
+        "she": subject,
+        "her": subject,
+        "they": subject,
+        "them": subject,
+        "their": subject
+    }
+    words = text.split()
+    for i in range (len(words)):
+        if words[i] in pronouns:
+            words[i] = pronouns[words[i]]
+    return" ".join(words)
 #MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN # 
 #MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN #
 #MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN MAIN #
@@ -1013,9 +1312,9 @@ def main_data(raw):
             return clean_bot_response(raw_response)
         else: 
             raw_response = "Bot: "+ result
+            context["last_intent"]="weather"    
             return clean_bot_response(raw_response)
         
-        context["last_intent"]="weather"
         # continue
     
     #time report
@@ -1091,6 +1390,9 @@ def main_data(raw):
     raw_response = "Bot: Sorry, I don't understand that yet."
     return clean_bot_response(raw_response)
 
+#TKINTER TKINTER TKINTER TKINTER TKINTER TKINTER TKINTER TKINTER TKINTERTKINTER TKINTER TKINTER
+#TKINTER TKINTER TKINTER TKINTER TKINTER TKINTER TKINTER TKINTER TKINTERTKINTER TKINTER TKINTER
+#TKINTER TKINTER TKINTER TKINTER TKINTER TKINTER TKINTER TKINTER TKINTERTKINTER TKINTER TKINTER
 root = tk.Tk()
 root.title("Jaggery")
 root.geometry("450x600")
